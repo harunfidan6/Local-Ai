@@ -1,0 +1,23 @@
+# Bu dosyayı projenin köküne "localai.toml" adıyla ya da
+# ~/.localai/config.toml olarak kopyala. Tüm alanlar isteğe bağlı.
+# Her alan ortam değişkeniyle de verilebilir: LOCALAI_<ALAN_ADI> (ör. LOCALAI_LOCAL_MODEL)
+
+# --- Yerel model (Ollama) ---
+local_model = "qwen2.5-coder:7b"
+ollama_host = "http://127.0.0.1:11434"
+# Bağlam penceresi (token). 8 GB VRAM için 8192-16384 makul.
+num_ctx = 16384
+# Araç çıktılarının (dosya, komut) en fazla kaç karakteri modele gönderilsin
+local_tool_output_chars = 6000
+
+# --- Bulut model (Claude API, ANTHROPIC_API_KEY gerekir) ---
+cloud_model = "claude-opus-5-5"   # daha ucuz: "claude-sonnet-5-5"
+effort = "high"                   # low | medium | high | xhigh | max (düşük = daha az token)
+cloud_tool_output_chars = 30000
+# Aylık bulut harcama sınırı (dolar). 0 = bulutu kapat, -1 = sınırsız
+monthly_budget_usd = 5.0
+
+# --- Genel ---
+mode = "auto"         # auto | local | cloud
+max_steps = 25        # bir görevde en fazla kaç model adımı
+auto_approve = false  # true: dosya yazma ve komut çalıştırma için onay sorma
