@@ -21,3 +21,38 @@ monthly_budget_usd = 5.0
 mode = "auto"         # auto | local | cloud
 max_steps = 25        # bir görevde en fazla kaç model adımı
 auto_approve = false  # true: dosya yazma ve komut çalıştırma için onay sorma
+
+# =====================================================================
+# Orkestra: Claude Code + Antigravity + yerel model birlikte çalışır
+# (localai orkestra ... komutları). Tüm alanlar isteğe bağlı.
+# =====================================================================
+[orkestra]
+# Claude Code: bilgisayarında kurulu ve aboneliğinle giriş yapılmış `claude` komutu
+claude_enabled = true
+claude_command = ["claude"]
+claude_model = ""            # boş = hesabının varsayılanı; ör. "sonnet" kotayı daha yavaş tüketir
+
+# Antigravity CLI (`agy`). Önce bir kez elle `agy` çalıştırıp giriş yap.
+antigravity_enabled = true
+antigravity_command = ["agy"]
+antigravity_model = ""
+# Antigravity'nin dosya düzenleyebilmesi için (başsız modda onay soracak kimse yok):
+#   antigravity_extra_args = ["--dangerously-skip-permissions"]
+#   antigravity_can_edit = true
+# Kapalıyken Antigravity sadece planlar ve denetler.
+antigravity_extra_args = []
+antigravity_can_edit = false
+
+local_enabled = true          # basit işler için ücretsiz yerel model (Ollama)
+
+check_command = ""            # her işten sonra çalışacak test, ör. "python -m pytest -q" veya "npm test"
+max_attempts = 3
+integration_branch = "orkestra"   # onaylanan işler burada birikir; ana dalına sen birleştirirsin
+task_timeout_min = 30
+default_cooldown_min = 30     # limit doldu ama sıfırlanma saati yazmıyorsa bekleme süresi
+poll_seconds = 10
+
+# Kredi dağıtımı: hangi aboneliğe ne kadar iş gitsin (yüksek = daha çok)
+claude_weight = 1.0
+antigravity_weight = 1.0
+balance_window_hours = 5.0

@@ -286,6 +286,12 @@ def read_request() -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    if argv and argv[0] in {"orkestra", "orchestra"}:
+        from .orchestra.cli import main as orchestra_main
+
+        return orchestra_main(argv[1:])
+
     parser = argparse.ArgumentParser(prog="localai", description="Yerel + bulut hibrit kodlama asistanı")
     parser.add_argument("request", nargs="*", help="Tek seferlik istek (boş bırakılırsa etkileşimli mod)")
     parser.add_argument("-w", "--workspace", default=".", help="Çalışma klasörü (varsayılan: bulunduğun klasör)")
