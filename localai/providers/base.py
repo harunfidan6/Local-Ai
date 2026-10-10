@@ -8,7 +8,10 @@ için tek yapılması gereken ``Provider`` arayüzünü uygulamaktır.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
+
+# Akış sırasında gelen her metin parçası için çağrılır
+DeltaFn = Callable[[str], None]
 
 
 @dataclass
@@ -50,6 +53,8 @@ class StepResult:
     model: str = ""
     # "end", "tool_use", "max_tokens", "refusal" veya "error"
     stop: str = "end"
+    # Metin akış sırasında parça parça zaten gösterildiyse True
+    streamed: bool = False
 
 
 class ProviderError(RuntimeError):
@@ -64,6 +69,6 @@ class Provider(Protocol):
 
     def add_tool_results(self, results: list[ToolResult]) -> None: ...
 
-    def step(self) -> StepResult: ...
+    def step(self, on_delta: DeltaFn | None = None) -> StepResult: ...
 
     def reset(self) -> None: ...

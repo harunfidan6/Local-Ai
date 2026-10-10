@@ -19,7 +19,12 @@ Terminalde çalışan, Claude Code benzeri bir kodlama asistanı. Basit işleri
 - **Bütçe:** Bulut harcaması her adımda kaydedilir. Aylık sınır dolunca görev
   durur ve istekler yerel modele düşer.
 - **Güvenlik:** Model çalışma klasörünün dışına çıkamaz. Dosya yazma ve komut
-  çalıştırma için her seferinde onay ister.
+  çalıştırma için her seferinde onay ister; değişiklikleri onaydan önce renkli
+  diff olarak gösterir. Beğenmezsen `/gerial` son görevin dosya değişikliklerini
+  geri alır.
+- **Küçük bağlam penceresine uyum:** Yerel modelin konuşması bağlam penceresini
+  doldurunca önce eski araç çıktıları, sonra en eski turlar atılır. Böylece
+  Ollama'nın sessizce sistem talimatını kesmesi engellenir.
 
 ## Kurulum (Windows)
 
@@ -83,6 +88,7 @@ Tek seferlik kullanım: `localai "README'ye kurulum bölümü ekle"`
 |---|---|
 | `/mod auto\|local\|cloud` | Yönlendirme modunu değiştirir |
 | `/yukselt` | Yerel modelin beceremediği son isteği Claude'a tekrar yaptırır |
+| `/gerial` | Son görevin yazdığı/düzenlediği dosyaları eski haline döndürür |
 | `/maliyet` | Bu ayki token kullanımı ve harcama |
 | `/sifirla` | Konuşmayı temizler |
 | `/cikis` | Çıkar |
@@ -165,9 +171,12 @@ sunucularla taklit edilir.
 
 ## Yol haritası
 
-- [ ] Cevapların kelime kelime akması (streaming) — yerel modelde bekleme hissini azaltır
+- [x] Cevapların kelime kelime akması (streaming)
+- [x] Değişiklikleri onaydan önce renkli diff olarak gösterme
+- [x] Son görevi geri alma (`/gerial`)
+- [x] Bağlam penceresi dolunca eski mesajları budama
+- [ ] Gerçek bilgisayarda (RTX 4060) farklı yerel modellerle deneme ve varsayılanları ayarlama
 - [ ] Repo indeksleme (embedding + arama) — küçük bağlam penceresine sadece ilgili kodu vermek için
-- [ ] Uzun konuşmalarda otomatik özetleme (yerel modelin bağlamı dolunca)
-- [ ] Değişiklikleri onaydan önce renkli diff olarak gösterme
-- [ ] `git` entegrasyonu: her görevden sonra otomatik commit ve geri alma
+- [ ] Budanan eski turları silmek yerine yerel modelle özetleme
+- [ ] `git` entegrasyonu: her görevden sonra otomatik commit
 - [ ] Yönlendiriciyi kendi kullanım verinle iyileştirme

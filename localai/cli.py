@@ -29,6 +29,7 @@ HELP = """\
 Komutlar:
   /mod auto|local|cloud   Yönlendirme modunu değiştir (şu an: {mode})
   /yukselt                Son isteği bulut modelde tekrar çalıştır
+  /gerial                 Son görevin dosya değişikliklerini geri al
   /maliyet                Bu ayki kullanım ve harcama
   /sifirla                Konuşmayı temizle
   /yardim                 Bu yardım
@@ -79,8 +80,26 @@ def cyan(t: str) -> str:
 # -- arayüz olayları ----------------------------------------------------------
 
 class ConsoleEvents(Events):
+    def __init__(self):
+        self.streaming = False
+        self.last_streamed = False
+
+    def on_delta(self, text: str) -> None:
+        if not self.streaming:
+            self.streaming = True
+            print()
+            text = text.lstrip()
+        print(text, end="", flush=True)
+
+    def on_step(self, step: StepResult) -> None:
+        self.last_streamed = step.streamed
+        if self.streaming:
+            print("\n")
+            self.streaming = False
+
     def on_text(self, text: str) -> None:
-        print(f"\n{text.strip()}\n")
+        if not self.last_streamed:
+            print(f"\n{text.strip()}\n")
 
     def on_tool_call(self, call: ToolCall) -> None:
         args = json.dumps(call.arguments, ensure_ascii=False)
@@ -95,9 +114,6 @@ class ConsoleEvents(Events):
         else:
             print(dim(f"    ✓ {first[:200]}"))
 
-    def on_step(self, step: StepResult) -> None:
-        pass
-
 
 class Approver:
     def __init__(self, auto: bool):
@@ -106,7 +122,17 @@ class Approver:
     def __call__(self, tool: str, summary: str) -> bool:
         if self.always:
             return True
-        print(yellow(f"\n  Onay gerekiyor — {summary}"))
+        title, _, body = summary.partition("\n")
+        print(yellow(f"\n  Onay gerekiyor — {title}"))
+        for line in body.splitlines():
+            if line.startswith("+"):
+                print(green(f"    {line}"))
+            elif line.startswith("-"):
+                print(red(f"    {line}"))
+            elif line.startswith("@@"):
+                print(cyan(f"    {line}"))
+            else:
+                print(dim(f"    {line}"))
         while True:
             try:
                 answer = input(yellow("  İzin veriyor musun? [e]vet / [h]ayır / [t]ümüne evet: ")).strip().lower()
@@ -223,13 +249,20 @@ def command(session: Session, line: str) -> bool:
             print("Yükseltilecek bir istek yok.")
         else:
             report(outcome, "cloud")
+    elif cmd in {"/gerial", "/geri-al", "/undo"}:
+        restored = session.undo()
+        if restored:
+            print("Geri alındı: " + ", ".join(restored))
+            print(dim("Not: run_command ile yapılan değişiklikler (ör. paket kurulumu) geri alınmaz."))
+        else:
+            print("Geri alınacak dosya değişikliği yok.")
     elif cmd in {"/maliyet", "/cost"}:
         summary = session.ledger.month_summary()
         limit = session.cfg.budget_limit
         spent = f"Bu ay bulut harcaması: ${session.ledger.month_usd():.4f}"
         print(spent + (f" / ${limit:.2f}" if limit is not None else ""))
         for key, value in sorted(summary.items()):
-            if key != "usd":
+            if key != "usd" and value:
                 print(dim(f"  {key}: {int(value):,}"))
     elif cmd in {"/sifirla", "/sıfırla", "/reset"}:
         session.reset()

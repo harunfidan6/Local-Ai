@@ -11,6 +11,9 @@ from .tools import ToolBox
 class Events:
     """Arayüzün ajanı izlemesi için kancalar. Varsayılanlar hiçbir şey yapmaz."""
 
+    def on_delta(self, text: str) -> None:
+        """Model cevabının akış sırasında gelen bir parçası."""
+
     def on_text(self, text: str) -> None: ...
 
     def on_tool_call(self, call: ToolCall) -> None: ...
@@ -52,7 +55,7 @@ def run_task(
     model = provider.model
 
     for step_no in range(1, max_steps + 1):
-        step = provider.step()
+        step = provider.step(on_delta=events.on_delta)
         usage.add(step.usage)
         model = step.model or model
         events.on_step(step)

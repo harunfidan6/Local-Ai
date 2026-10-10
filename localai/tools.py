@@ -6,6 +6,7 @@ dışına çıkamaz. Dosya yazan ve komut çalıştıran araçlar kullanıcı on
 
 from __future__ import annotations
 
+import difflib
 import fnmatch
 import os
 import re
@@ -151,11 +152,35 @@ def validate_args(spec: ToolSpec, args: Any) -> str | None:
     return None
 
 
+MAX_DIFF_LINES = 80
+
+
 class ToolBox:
     def __init__(self, workspace: Path, confirm: ConfirmFn, max_output_chars: int = 12_000):
         self.workspace = workspace.resolve()
         self.confirm = confirm
         self.max_output_chars = max_output_chars
+        # Son görevde değişen dosyaların ilk halleri (None = dosya yoktu); /gerial için
+        self.originals: dict[Path, bytes | None] = {}
+
+    def begin_task(self) -> None:
+        self.originals = {}
+
+    def undo(self) -> list[str]:
+        """Son görevde yazılan/düzenlenen dosyaları eski haline döndürür."""
+        restored = []
+        for path, content in self.originals.items():
+            if content is None:
+                path.unlink(missing_ok=True)
+            else:
+                path.write_bytes(content)
+            restored.append(self._rel(path))
+        self.originals = {}
+        return sorted(restored)
+
+    def _remember(self, target: Path) -> None:
+        if target not in self.originals:
+            self.originals[target] = target.read_bytes() if target.exists() else None
 
     # -- genel giriş noktası -------------------------------------------------
 
@@ -172,9 +197,11 @@ class ToolBox:
         problem = validate_args(spec, call.arguments)
         if problem:
             return ToolResult(call.id, call.name, f"Geçersiz argümanlar: {problem}", is_error=True)
-        if spec.needs_approval and not self.confirm(call.name, self._describe(call)):
-            return ToolResult(call.id, call.name, "Kullanıcı bu işlemi reddetti.", is_error=True)
         try:
+            # Onay sormadan önce: hatalı bir düzenleme için kullanıcıyı boşuna bekletme
+            summary = self._describe(call) if spec.needs_approval else ""
+            if spec.needs_approval and not self.confirm(call.name, summary):
+                return ToolResult(call.id, call.name, "Kullanıcı bu işlemi reddetti.", is_error=True)
             output = getattr(self, f"_{call.name}")(**call.arguments)
         except ToolError as e:
             return ToolResult(call.id, call.name, str(e), is_error=True)
@@ -205,17 +232,56 @@ class ToolBox:
     def _describe(self, call: ToolCall) -> str:
         args = call.arguments
         if call.name == "run_command":
-            return f"Komut çalıştır: {args.get('command')}"
+            return f"Komut çalıştır: {args['command']}"
         if call.name == "write_file":
-            content = args.get("content", "")
-            return f"Dosya yaz: {args.get('path')} ({len(content.splitlines())} satır)"
+            target = self._resolve(args["path"])
+            before = self._read_text(target) if target.is_file() else None
+            if before is None:
+                lines = args["content"].splitlines()
+                preview = "\n".join("+" + line for line in lines[:MAX_DIFF_LINES])
+                more = f"\n... (+{len(lines) - MAX_DIFF_LINES} satır)" if len(lines) > MAX_DIFF_LINES else ""
+                return f"Yeni dosya: {self._rel(target)}\n{preview}{more}"
+            return f"Dosyanın üzerine yaz: {self._rel(target)}\n{self._diff(target, before, args['content'])}"
         if call.name == "edit_file":
-            return (
-                f"Dosya düzenle: {args.get('path')}\n"
-                f"--- eski ---\n{args.get('old_text', '')}\n"
-                f"--- yeni ---\n{args.get('new_text', '')}"
-            )
+            target, before, after = self._plan_edit(args["path"], args["old_text"], args["new_text"])
+            return f"Dosya düzenle: {self._rel(target)}\n{self._diff(target, before, after)}"
         return f"{call.name} {args}"
+
+    def _diff(self, target: Path, before: str, after: str) -> str:
+        name = self._rel(target)
+        lines = list(difflib.unified_diff(
+            before.splitlines(), after.splitlines(), f"a/{name}", f"b/{name}", n=2, lineterm=""
+        ))[2:]  # dosya adı başlıklarını atla
+        if not lines:
+            return "(değişiklik yok)"
+        if len(lines) > MAX_DIFF_LINES:
+            lines = lines[:MAX_DIFF_LINES] + [f"... ({len(lines) - MAX_DIFF_LINES} satır daha)"]
+        return "\n".join(lines)
+
+    def _read_text(self, target: Path) -> str:
+        try:
+            return target.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            raise ToolError(f"{self._rel(target)} bir metin dosyası değil (UTF-8 okunamadı).")
+
+    @staticmethod
+    def _newline_of(target: Path) -> str:
+        """Dosyanın satır sonu stilini korur (Windows'ta LF dosyalar CRLF'ye dönmesin)."""
+        if target.is_file() and b"\r\n" in target.read_bytes():
+            return "\r\n"
+        return "\n"
+
+    def _plan_edit(self, path: str, old_text: str, new_text: str) -> tuple[Path, str, str]:
+        target = self._resolve(path)
+        if not target.is_file():
+            raise ToolError(f"Dosya bulunamadı: {path}")
+        text = self._read_text(target)
+        count = text.count(old_text) if old_text else 0
+        if count == 0:
+            raise ToolError("old_text dosyada bulunamadı. Önce read_file ile dosyanın güncel halini oku.")
+        if count > 1:
+            raise ToolError(f"old_text dosyada {count} kez geçiyor; çevre satırları ekleyerek benzersiz yap.")
+        return target, text, text.replace(old_text, new_text, 1)
 
     def _walk(self, root: Path):
         for dirpath, dirnames, filenames in os.walk(root):
@@ -254,11 +320,7 @@ class ToolBox:
         target = self._resolve(path)
         if not target.is_file():
             raise ToolError(f"Dosya bulunamadı: {path}")
-        try:
-            text = target.read_text(encoding="utf-8")
-        except UnicodeDecodeError:
-            raise ToolError(f"{path} bir metin dosyası değil (UTF-8 okunamadı).")
-        lines = text.splitlines()
+        lines = self._read_text(target).splitlines()
         start = max(1, start_line or 1)
         end = min(len(lines), end_line or len(lines))
         if not lines:
@@ -292,23 +354,20 @@ class ToolBox:
 
     def _write_file(self, path: str, content: str) -> str:
         target = self._resolve(path)
+        if target.is_dir():
+            raise ToolError(f"{path} bir klasör.")
+        self._remember(target)
         target.parent.mkdir(parents=True, exist_ok=True)
         existed = target.exists()
-        target.write_text(content, encoding="utf-8")
+        newline = self._newline_of(target)
+        target.write_text(content.replace("\r\n", "\n"), encoding="utf-8", newline=newline)
         verb = "güncellendi" if existed else "oluşturuldu"
         return f"{self._rel(target)} {verb} ({len(content.splitlines())} satır)."
 
     def _edit_file(self, path: str, old_text: str, new_text: str) -> str:
-        target = self._resolve(path)
-        if not target.is_file():
-            raise ToolError(f"Dosya bulunamadı: {path}")
-        text = target.read_text(encoding="utf-8")
-        count = text.count(old_text) if old_text else 0
-        if count == 0:
-            raise ToolError("old_text dosyada bulunamadı. Önce read_file ile dosyanın güncel halini oku.")
-        if count > 1:
-            raise ToolError(f"old_text dosyada {count} kez geçiyor; çevre satırları ekleyerek benzersiz yap.")
-        target.write_text(text.replace(old_text, new_text, 1), encoding="utf-8")
+        target, _, after = self._plan_edit(path, old_text, new_text)
+        self._remember(target)
+        target.write_text(after, encoding="utf-8", newline=self._newline_of(target))
         return f"{self._rel(target)} düzenlendi."
 
     def _run_command(self, command: str, timeout: int = 120) -> str:

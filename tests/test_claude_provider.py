@@ -69,8 +69,10 @@ def test_request_shape_and_tool_call_parsing(server):
     provider = ClaudeProvider("claude-opus-5-5", "sistem", TOOL_SPECS, client=client)
     provider.add_user("a.py'yi oku")
 
-    step = provider.step()
+    pieces = []
+    step = provider.step(on_delta=pieces.append)
 
+    assert pieces == ["Dosyayı okuyorum."] and step.streamed
     assert step.stop == "tool_use"
     assert step.text == "Dosyayı okuyorum."
     assert step.tool_calls[0].name == "read_file"

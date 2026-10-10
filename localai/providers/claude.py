@@ -13,7 +13,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..tools import ToolSpec
-from .base import ProviderError, StepResult, ToolCall, ToolResult, Usage
+from .base import DeltaFn, ProviderError, StepResult, ToolCall, ToolResult, Usage
 
 # Sunucu tarafı fallback'i destekleyen modeller. Haiku 5.5'te fallback yok;
 # ona bu parametre gönderilmez.
@@ -105,12 +105,15 @@ class ClaudeProvider:
             kwargs["fallbacks"] = "default"
         return kwargs
 
-    def _call(self):
+    def _call(self, on_delta: DeltaFn | None):
         import anthropic
 
         for attempt in range(MAX_JSON_RETRIES + 1):
             try:
                 with self.client.beta.messages.stream(**self._request_kwargs()) as stream:
+                    for event in stream:
+                        if on_delta and event.type == "text":
+                            on_delta(event.text)
                     return stream.get_final_message()
             except anthropic.AuthenticationError as e:
                 raise ProviderError(
@@ -128,8 +131,8 @@ class ClaudeProvider:
                     raise ProviderError(f"Claude geçersiz araç girdisi üretti: {e}") from e
         raise AssertionError("unreachable")
 
-    def step(self) -> StepResult:
-        msg = self._call()
+    def step(self, on_delta: DeltaFn | None = None) -> StepResult:
+        msg = self._call(on_delta)
         content = _echoable_content(list(msg.content))
 
         if msg.stop_reason == "refusal":
@@ -153,7 +156,7 @@ class ClaudeProvider:
             stop = "tool_use"
         else:
             stop = "end"
-        return StepResult(text=text, tool_calls=calls, usage=_usage(msg), model=msg.model, stop=stop)
+        return StepResult(text, calls, _usage(msg), msg.model, stop, streamed=on_delta is not None and bool(text))
 
 
 def _usage(msg) -> Usage:

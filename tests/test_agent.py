@@ -27,7 +27,7 @@ class FakeProvider:
     def add_tool_results(self, results):
         self.tool_results.append(results)
 
-    def step(self):
+    def step(self, on_delta=None):
         return self.steps.pop(0)
 
 

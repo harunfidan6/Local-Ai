@@ -94,3 +94,37 @@ def test_long_output_is_truncated(tmp_path):
     result = run(box, "read_file", path="big.txt")
     assert "karakter kesildi" in result.content
     assert len(result.content) < 1200
+
+
+def test_approval_shows_diff(tmp_path):
+    (tmp_path / "a.py").write_text("x = 1\ny = 2\n", encoding="utf-8")
+    seen = []
+    box = ToolBox(tmp_path, confirm=lambda tool, summary: seen.append(summary) or True)
+    box.execute(ToolCall("1", "edit_file", {"path": "a.py", "old_text": "y = 2", "new_text": "y = 3"}))
+    assert "-y = 2" in seen[0] and "+y = 3" in seen[0]
+
+
+def test_bad_edit_fails_before_asking(tmp_path):
+    (tmp_path / "a.py").write_text("x = 1\n", encoding="utf-8")
+    asked = []
+    box = ToolBox(tmp_path, confirm=lambda tool, summary: asked.append(tool) or True)
+    result = box.execute(ToolCall("1", "edit_file", {"path": "a.py", "old_text": "yok", "new_text": "z"}))
+    assert result.is_error and not asked
+
+
+def test_undo_restores_edits_and_removes_new_files(box, tmp_path):
+    box.begin_task()
+    run(box, "edit_file", path="src/app.py", old_text="'merhaba'", new_text="'selam'")
+    run(box, "edit_file", path="src/app.py", old_text="'selam'", new_text="'hey'")
+    run(box, "write_file", path="yeni.txt", content="x")
+    assert box.undo() == ["src/app.py", "yeni.txt"]
+    assert "'merhaba'" in (tmp_path / "src" / "app.py").read_text(encoding="utf-8")
+    assert not (tmp_path / "yeni.txt").exists()
+
+
+def test_crlf_files_keep_their_line_endings(box, tmp_path):
+    (tmp_path / "win.txt").write_bytes(b"a\r\nb\r\n")
+    run(box, "edit_file", path="win.txt", old_text="b", new_text="c")
+    assert (tmp_path / "win.txt").read_bytes() == b"a\r\nc\r\n"
+    run(box, "write_file", path="lf.txt", content="a\r\nb\n")
+    assert (tmp_path / "lf.txt").read_bytes() == b"a\nb\n"

@@ -42,6 +42,7 @@ class Session:
 
     def reset(self) -> None:
         self.transcript: list[Exchange] = []
+        self.last_toolbox: ToolBox | None = None
         # Her sağlayıcının transkriptin kaçıncı kaydına kadar haberdar olduğu
         self.synced = {name: 0 for name in self.providers}
         for provider in self.providers.values():
@@ -64,9 +65,15 @@ class Session:
             return None
         return self.run_on("cloud", self.transcript[-1].request)
 
+    def undo(self) -> list[str]:
+        """Son görevin dosya değişikliklerini geri alır; geri alınan dosyaları döner."""
+        return self.last_toolbox.undo() if self.last_toolbox else []
+
     def run_on(self, name: str, text: str) -> TaskOutcome:
         provider = self.providers[name]
         prompt = self._with_missed_context(name, text)
+        self.last_toolbox = self.toolboxes[name]
+        self.last_toolbox.begin_task()
         limit = self.cfg.budget_limit if name == "cloud" else None
         recorder = _CostRecorder(name, provider.model, self.ledger, self.events, limit)
         try:
@@ -113,6 +120,9 @@ class _CostRecorder(Events):
         self.ledger.record(self.provider, step.usage, cost)
         self.cost = None if cost is None or self.cost is None else self.cost + cost
         self.inner.on_step(step)
+
+    def on_delta(self, text: str) -> None:
+        self.inner.on_delta(text)
 
     def on_text(self, text: str) -> None:
         self.inner.on_text(text)
